@@ -1,0 +1,22 @@
+name: Fork script checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shell-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Bash syntax
+        run: bash -n marzban.sh marzban-node.sh install_latest_xray.sh
+      - name: Verify Fork image targets
+        run: |
+          grep -q 'ghcr.io/kissow/marzban:latest' marzban.sh
+          grep -q 'ghcr.io/kissow/marzban-node:latest' marzban-node.sh
+          grep -q 'FETCH_REPO="kissow/Marzban-scripts"' marzban.sh
+          grep -q 'FETCH_REPO="kissow/Marzban-scripts"' marzban-node.sh

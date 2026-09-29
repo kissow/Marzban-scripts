@@ -6,7 +6,7 @@ while [[ $# -gt 0 ]]; do
     key="$1"
     
     case $key in
-        install|update|uninstall|up|down|restart|status|logs|core-update|install-script|uninstall-script|edit)
+        install|update|adopt|uninstall|up|down|restart|status|logs|core-update|install-script|uninstall-script|edit)
             COMMAND="$1"
             shift # past argument
         ;;
@@ -58,8 +58,8 @@ DATA_MAIN_DIR="/var/lib/$APP_NAME"
 COMPOSE_FILE="$APP_DIR/docker-compose.yml"
 LAST_XRAY_CORES=5
 CERT_FILE="$DATA_DIR/cert.pem"
-FETCH_REPO="Gozargah/Marzban-scripts"
-SCRIPT_URL="https://github.com/$FETCH_REPO/raw/master/marzban-node.sh"
+FETCH_REPO="kissow/Marzban-scripts"
+SCRIPT_URL="https://raw.githubusercontent.com/$FETCH_REPO/master/marzban-node.sh"
 
 colorized_echo() {
     local color=$1
@@ -183,13 +183,17 @@ install_docker() {
 }
 
 install_marzban_node_script() {
-    colorized_echo blue "Installing marzban script"
+    colorized_echo blue "Installing Mr.shaw Marzban-Node script"
     TARGET_PATH="/usr/local/bin/$APP_NAME"
-    curl -sSL $SCRIPT_URL -o $TARGET_PATH
-    
-    sed -i "s/^APP_NAME=.*/APP_NAME=\"$APP_NAME\"/" $TARGET_PATH
-    
-    chmod 755 $TARGET_PATH
+    local script_file
+    script_file=$(mktemp)
+    if ! curl -fsSL "$SCRIPT_URL" -o "$script_file"; then
+        rm -f "$script_file"
+        colorized_echo red "Unable to fetch the Mr.shaw Marzban-Node script."
+        return 1
+    fi
+    install -m 755 "$script_file" "$TARGET_PATH"
+    rm -f "$script_file"
     colorized_echo green "Marzban-node script installed successfully at $TARGET_PATH"
 }
 
@@ -303,7 +307,7 @@ install_marzban_node() {
 services:
   marzban-node:
     container_name: $APP_NAME
-    image: gozargah/marzban-node:latest
+    image: ghcr.io/kissow/marzban-node:latest
     restart: always
     network_mode: host
     environment:
@@ -381,7 +385,15 @@ follow_marzban_node_logs() {
 
 update_marzban_node_script() {
     colorized_echo blue "Updating marzban-node script"
-    curl -sSL $SCRIPT_URL | install -m 755 /dev/stdin /usr/local/bin/$APP_NAME
+    local script_file
+    script_file=$(mktemp)
+    if ! curl -fsSL "$SCRIPT_URL" -o "$script_file"; then
+        rm -f "$script_file"
+        colorized_echo red "Unable to fetch the Mr.shaw Marzban-Node script."
+        return 1
+    fi
+    install -m 755 "$script_file" "/usr/local/bin/$APP_NAME"
+    rm -f "$script_file"
     colorized_echo green "marzban-node script updated successfully"
 }
 
@@ -409,12 +421,8 @@ install_command() {
     check_running_as_root
     # Check if marzban is already installed
     if is_marzban_node_installed; then
-        colorized_echo red "Marzban-node is already installed at $APP_DIR"
-        read -p "Do you want to override the previous installation? (y/n) "
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            colorized_echo red "Aborted installation"
-            exit 1
-        fi
+        colorized_echo red "Marzban-Node is already installed at $APP_DIR. Use 'marzban-node adopt' once, then 'marzban-node update'."
+        exit 1
     fi
     detect_os
     if ! command -v jq >/dev/null 2>&1; then
@@ -653,6 +661,62 @@ logs_command() {
     fi
 }
 
+backup_before_fork_update() {
+    if [ ! -f "$COMPOSE_FILE" ] || [ ! -d "$DATA_DIR" ]; then
+        colorized_echo red "Missing compose or Node data directory; update aborted."
+        return 1
+    fi
+    $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" config --quiet
+    local backup_dir="$APP_DIR/backup"
+    local backup_file
+    mkdir -p -m 700 "$backup_dir"
+    backup_file=$(mktemp "$backup_dir/upgrade-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXXXX.tar.gz")
+    $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" stop
+    if ! tar -czf "$backup_file" -C "$APP_DIR" docker-compose.yml \
+        -C "$(dirname "$DATA_DIR")" "$(basename "$DATA_DIR")"; then
+        $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" up -d
+        colorized_echo red "Node backup failed; image was not changed."
+        return 1
+    fi
+    if ! tar -tzf "$backup_file" >/dev/null; then
+        $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" up -d
+        colorized_echo red "Node backup verification failed; image was not changed."
+        return 1
+    fi
+    $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" up -d
+    colorized_echo green "Pre-update Node backup: $backup_file"
+}
+
+pull_fork_image() {
+    $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" pull marzban-node || return 1
+    $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" up -d --no-deps marzban-node || return 1
+}
+
+adopt_command() {
+    check_running_as_root
+    if ! is_marzban_node_installed; then
+        colorized_echo red "Marzban-Node is not installed. Use 'marzban-node install' on a new server."
+        return 1
+    fi
+    if ! command -v yq >/dev/null 2>&1; then
+        colorized_echo red "yq is required to change only the image field."
+        return 1
+    fi
+    detect_compose
+    backup_before_fork_update
+    local compose_copy="$APP_DIR/backup/docker-compose-before-fork-$(date -u +%Y%m%dT%H%M%SZ).yml"
+    cp -a "$COMPOSE_FILE" "$compose_copy"
+    yq -i '.services."marzban-node".image = "ghcr.io/kissow/marzban-node:latest"' "$COMPOSE_FILE"
+    if ! $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" config --quiet || ! pull_fork_image; then
+        cp -a "$compose_copy" "$COMPOSE_FILE"
+        $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" up -d
+        colorized_echo red "Fork Node image did not start; original compose restored."
+        return 1
+    fi
+    update_marzban_node_script
+    colorized_echo green "Node Fork adopted. Future updates use 'marzban-node update'."
+}
+
 update_command() {
     check_running_as_root
     # Check if marzban is installed
@@ -662,16 +726,15 @@ update_command() {
     fi
     
     detect_compose
-    
+    if ! command -v yq >/dev/null 2>&1 || \
+       [[ "$(yq e '.services."marzban-node".image' "$COMPOSE_FILE")" != ghcr.io/kissow/marzban-node:* ]]; then
+        colorized_echo red "This Node still uses the official image. Run 'marzban-node adopt' once."
+        return 1
+    fi
+    backup_before_fork_update
+    pull_fork_image
     update_marzban_node_script
-    colorized_echo blue "Pulling latest version"
-    update_marzban_node
-    
-    colorized_echo blue "Restarting Marzban-node services"
-    down_marzban_node
-    up_marzban_node
-    
-    colorized_echo blue "Marzban-node updated successfully"
+    colorized_echo green "Marzban-Node Fork updated successfully; existing certificates were kept."
 }
 
 identify_the_operating_system_and_architecture() {
@@ -1008,6 +1071,7 @@ usage() {
     colorized_echo yellow "  logs            $(tput sgr0)– Show logs"
     colorized_echo yellow "  install         $(tput sgr0)– Install/reinstall Marzban-node"
     colorized_echo yellow "  update          $(tput sgr0)– Update to latest version"
+    colorized_echo yellow "  adopt           $(tput sgr0)– Switch an existing official Node to this Fork without resetting certificates"
     colorized_echo yellow "  uninstall       $(tput sgr0)– Uninstall Marzban-node"
     colorized_echo yellow "  install-script  $(tput sgr0)– Install Marzban-node script"
     colorized_echo yellow "  uninstall-script  $(tput sgr0)– Uninstall Marzban-node script"
@@ -1047,6 +1111,9 @@ case "$COMMAND" in
     ;;
     update)
         update_command
+    ;;
+    adopt)
+        adopt_command
     ;;
     uninstall)
         uninstall_command

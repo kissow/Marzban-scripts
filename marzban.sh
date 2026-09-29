@@ -123,10 +123,18 @@ detect_compose() {
 }
 
 install_marzban_script() {
-    FETCH_REPO="Gozargah/Marzban-scripts"
-    SCRIPT_URL="https://github.com/$FETCH_REPO/raw/master/marzban.sh"
+    FETCH_REPO="kissow/Marzban-scripts"
+    SCRIPT_URL="https://raw.githubusercontent.com/$FETCH_REPO/master/marzban.sh"
     colorized_echo blue "Installing marzban script"
-    curl -sSL $SCRIPT_URL | install -m 755 /dev/stdin /usr/local/bin/marzban
+    local script_file
+    script_file=$(mktemp)
+    if ! curl -fsSL "$SCRIPT_URL" -o "$script_file"; then
+        rm -f "$script_file"
+        colorized_echo red "Unable to fetch the Mr.shaw Marzban script."
+        return 1
+    fi
+    install -m 755 "$script_file" /usr/local/bin/marzban
+    rm -f "$script_file"
     colorized_echo green "marzban script installed successfully"
 }
 
@@ -488,7 +496,8 @@ remove_backup_service() {
 
 backup_command() {
     local backup_dir="$APP_DIR/backup"
-    local temp_dir="/tmp/marzban_backup"
+    local temp_dir
+    temp_dir=$(mktemp -d /tmp/marzban_backup.XXXXXXXX)
     local timestamp=$(date +"%Y%m%d%H%M%S")
     local backup_file="$backup_dir/backup_$timestamp.tar.gz"
     local error_messages=()
@@ -501,9 +510,7 @@ backup_command() {
         install_package rsync
     fi
 
-    rm -rf "$backup_dir"
-    mkdir -p "$backup_dir"
-    mkdir -p "$temp_dir"
+    mkdir -p -m 700 "$backup_dir"
 
     if [ -f "$ENV_FILE" ]; then
         while IFS='=' read -r key value; do
@@ -710,7 +717,7 @@ install_marzban() {
     local marzban_version=$1
     local database_type=$2
     # Fetch releases
-    FILES_URL_PREFIX="https://raw.githubusercontent.com/Gozargah/Marzban/master"
+    FILES_URL_PREFIX="https://raw.githubusercontent.com/kissow/Marzban/master"
     
     mkdir -p "$DATA_DIR"
     mkdir -p "$APP_DIR"
@@ -723,7 +730,7 @@ install_marzban() {
         cat > "$docker_file_path" <<EOF
 services:
   marzban:
-    image: gozargah/marzban:${marzban_version}
+    image: ghcr.io/kissow/marzban:${marzban_version}
     restart: always
     env_file: .env
     network_mode: host
@@ -814,7 +821,7 @@ EOF
         cat > "$docker_file_path" <<EOF
 services:
   marzban:
-    image: gozargah/marzban:${marzban_version}
+    image: ghcr.io/kissow/marzban:${marzban_version}
     restart: always
     env_file: .env
     network_mode: host
@@ -910,9 +917,9 @@ EOF
 
         # Install requested version
         if [ "$marzban_version" == "latest" ]; then
-            yq -i '.services.marzban.image = "gozargah/marzban:latest"' "$docker_file_path"
+            yq -i '.services.marzban.image = "ghcr.io/kissow/marzban:latest"' "$docker_file_path"
         else
-            yq -i ".services.marzban.image = \"gozargah/marzban:${marzban_version}\"" "$docker_file_path"
+            yq -i ".services.marzban.image = \"ghcr.io/kissow/marzban:${marzban_version}\"" "$docker_file_path"
         fi
         echo "Installing $marzban_version version"
         colorized_echo green "File saved in $APP_DIR/docker-compose.yml"
@@ -1047,12 +1054,8 @@ install_command() {
 
     # Check if marzban is already installed
     if is_marzban_installed; then
-        colorized_echo red "Marzban is already installed at $APP_DIR"
-        read -p "Do you want to override the previous installation? (y/n) "
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            colorized_echo red "Aborted installation"
-            exit 1
-        fi
+        colorized_echo red "Marzban is already installed at $APP_DIR. Use 'marzban adopt' once, then 'marzban update'."
+        exit 1
     fi
     detect_os
     if ! command -v jq >/dev/null 2>&1; then
@@ -1069,26 +1072,16 @@ install_command() {
     fi
     detect_compose
     install_marzban_script
-    # Function to check if a version exists in the GitHub releases
+    # Check fork tags without depending on GitHub Release objects.
     check_version_exists() {
         local version=$1
-        repo_url="https://api.github.com/repos/Gozargah/Marzban/releases"
         if [ "$version" == "latest" ] || [ "$version" == "dev" ]; then
             return 0
         fi
-        
-        # Fetch the release data from GitHub API
-        response=$(curl -s "$repo_url")
-        
-        # Check if the response contains the version tag
-        if echo "$response" | jq -e ".[] | select(.tag_name == \"${version}\")" > /dev/null; then
-            return 0
-        else
-            return 1
-        fi
+        curl -fsS -o /dev/null "https://api.github.com/repos/kissow/Marzban/git/ref/tags/$version"
     }
     # Check if the version is valid and exists
-    if [[ "$marzban_version" == "latest" || "$marzban_version" == "dev" || "$marzban_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    if [[ "$marzban_version" == "latest" || "$marzban_version" == "dev" || "$marzban_version" =~ ^mrshaw-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         if check_version_exists "$marzban_version"; then
             install_marzban "$marzban_version" "$database_type"
             echo "Installing $marzban_version version"
@@ -1450,6 +1443,72 @@ up_command() {
     fi
 }
 
+backup_before_fork_update() {
+    if [ ! -f "$COMPOSE_FILE" ] || [ ! -f "$ENV_FILE" ] || [ ! -d "$DATA_DIR" ]; then
+        colorized_echo red "Missing compose, .env, or data directory; update aborted."
+        return 1
+    fi
+    $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" config --quiet
+
+    # A remote database is not covered by the local data archive.
+    if grep -Eq '^[[:space:]]*SQLALCHEMY_DATABASE_URL[[:space:]]*=.*(mysql|postgresql)' "$ENV_FILE" && \
+       ! $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" config --services | grep -Eq '^(mysql|mariadb)$'; then
+        colorized_echo red "External database detected. Back it up separately before updating."
+        return 1
+    fi
+
+    local backup_dir="$APP_DIR/backup"
+    local backup_file
+    mkdir -p -m 700 "$backup_dir"
+    backup_file=$(mktemp "$backup_dir/upgrade-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXXXX.tar.gz")
+
+    # Stop SQLite/MySQL/MariaDB cleanly so the data archive is consistent.
+    $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" stop
+    if ! tar -czf "$backup_file" -C "$APP_DIR" .env docker-compose.yml \
+        -C "$(dirname "$DATA_DIR")" "$(basename "$DATA_DIR")"; then
+        $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" up -d
+        colorized_echo red "Data backup failed; image was not changed."
+        return 1
+    fi
+    if ! tar -tzf "$backup_file" >/dev/null; then
+        $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" up -d
+        colorized_echo red "Backup verification failed; image was not changed."
+        return 1
+    fi
+    $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" up -d
+    colorized_echo green "Pre-update backup: $backup_file"
+}
+
+pull_fork_image() {
+    $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" pull marzban || return 1
+    $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" up -d --no-deps marzban || return 1
+}
+
+adopt_command() {
+    check_running_as_root
+    if ! is_marzban_installed; then
+        colorized_echo red "Marzban is not installed. Use 'marzban install' on a new server."
+        return 1
+    fi
+    if ! command -v yq >/dev/null 2>&1; then
+        colorized_echo red "yq is required to change only the image field."
+        return 1
+    fi
+    detect_compose
+    backup_before_fork_update
+    local compose_copy="$APP_DIR/backup/docker-compose-before-fork-$(date -u +%Y%m%dT%H%M%SZ).yml"
+    cp -a "$COMPOSE_FILE" "$compose_copy"
+    yq -i '.services.marzban.image = "ghcr.io/kissow/marzban:latest"' "$COMPOSE_FILE"
+    if ! $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" config --quiet || ! pull_fork_image; then
+        cp -a "$compose_copy" "$COMPOSE_FILE"
+        $COMPOSE -f "$COMPOSE_FILE" -p "$APP_NAME" up -d
+        colorized_echo red "Fork image did not start; original compose restored."
+        return 1
+    fi
+    update_marzban_script
+    colorized_echo green "Fork adopted. Future updates use 'marzban update'."
+}
+
 update_command() {
     check_running_as_root
     # Check if marzban is installed
@@ -1459,23 +1518,30 @@ update_command() {
     fi
     
     detect_compose
-    
+    if ! command -v yq >/dev/null 2>&1 || \
+       [[ "$(yq e '.services.marzban.image' "$COMPOSE_FILE")" != ghcr.io/kissow/marzban:* ]]; then
+        colorized_echo red "This installation still uses the official image. Run 'marzban adopt' once."
+        return 1
+    fi
+    backup_before_fork_update
+    pull_fork_image
     update_marzban_script
-    colorized_echo blue "Pulling latest version"
-    update_marzban
-    
-    colorized_echo blue "Restarting Marzban's services"
-    down_marzban
-    up_marzban
-    
-    colorized_echo blue "Marzban updated successfully"
+    colorized_echo green "Marzban fork updated successfully; existing data and .env were kept."
 }
 
 update_marzban_script() {
-    FETCH_REPO="Gozargah/Marzban-scripts"
-    SCRIPT_URL="https://github.com/$FETCH_REPO/raw/master/marzban.sh"
+    FETCH_REPO="kissow/Marzban-scripts"
+    SCRIPT_URL="https://raw.githubusercontent.com/$FETCH_REPO/master/marzban.sh"
     colorized_echo blue "Updating marzban script"
-    curl -sSL $SCRIPT_URL | install -m 755 /dev/stdin /usr/local/bin/marzban
+    local script_file
+    script_file=$(mktemp)
+    if ! curl -fsSL "$SCRIPT_URL" -o "$script_file"; then
+        rm -f "$script_file"
+        colorized_echo red "Unable to fetch the Mr.shaw Marzban script."
+        return 1
+    fi
+    install -m 755 "$script_file" /usr/local/bin/marzban
+    rm -f "$script_file"
     colorized_echo green "marzban script updated successfully"
 }
 
@@ -1538,6 +1604,7 @@ usage() {
     colorized_echo yellow "  cli             $(tput sgr0)– Marzban CLI"
     colorized_echo yellow "  install         $(tput sgr0)– Install Marzban"
     colorized_echo yellow "  update          $(tput sgr0)– Update to latest version"
+    colorized_echo yellow "  adopt           $(tput sgr0)– Switch an existing official install to this Fork without resetting data"
     colorized_echo yellow "  uninstall       $(tput sgr0)– Uninstall Marzban"
     colorized_echo yellow "  install-script  $(tput sgr0)– Install Marzban script"
     colorized_echo yellow "  backup          $(tput sgr0)– Manual backup launch"
@@ -1577,6 +1644,8 @@ case "$1" in
         shift; install_command "$@";;
     update)
         shift; update_command "$@";;
+    adopt)
+        shift; adopt_command "$@";;
     uninstall)
         shift; uninstall_command "$@";;
     install-script)
