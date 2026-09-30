@@ -56,7 +56,10 @@ fi
 DATA_DIR="/var/lib/$APP_NAME"
 DATA_MAIN_DIR="/var/lib/$APP_NAME"
 COMPOSE_FILE="$APP_DIR/docker-compose.yml"
-LAST_XRAY_CORES=5
+# Keep the external-core maintenance command on the same version used by the
+# repository Docker image. A deliberate XRAY_CORE_VERSION environment override
+# is still possible for an isolated test, but production must use this pin.
+XRAY_CORE_VERSION="${XRAY_CORE_VERSION:-v26.3.27}"
 CERT_FILE="$DATA_DIR/cert.pem"
 FETCH_REPO="kissow/Marzban-scripts"
 SCRIPT_URL="https://raw.githubusercontent.com/$FETCH_REPO/master/marzban-node.sh"
@@ -799,75 +802,12 @@ identify_the_operating_system_and_architecture() {
 # Function to update the Xray core
 get_xray_core() {
     identify_the_operating_system_and_architecture
-    clear
-    
-    
-    validate_version() {
-        local version="$1"
-        
-        local response=$(curl -s "https://api.github.com/repos/XTLS/Xray-core/releases/tags/$version")
-        if echo "$response" | grep -q '"message": "Not Found"'; then
-            echo "invalid"
-        else
-            echo "valid"
-        fi
-    }
-    
-    
-    print_menu() {
-        clear
-        echo -e "\033[1;32m==============================\033[0m"
-        echo -e "\033[1;32m      Xray-core Installer     \033[0m"
-        echo -e "\033[1;32m==============================\033[0m"
-       current_version=$(get_current_xray_core_version)
-        echo -e "\033[1;33m>>>> Current Xray-core version: \033[1;1m$current_version\033[0m"
-        echo -e "\033[1;32m==============================\033[0m"
-        echo -e "\033[1;33mAvailable Xray-core versions:\033[0m"
-        for ((i=0; i<${#versions[@]}; i++)); do
-            echo -e "\033[1;34m$((i + 1)):\033[0m ${versions[i]}"
-        done
-        echo -e "\033[1;32m==============================\033[0m"
-        echo -e "\033[1;35mM:\033[0m Enter a version manually"
-        echo -e "\033[1;31mQ:\033[0m Quit"
-        echo -e "\033[1;32m==============================\033[0m"
-    }
-    
-    
-    latest_releases=$(curl -s "https://api.github.com/repos/XTLS/Xray-core/releases?per_page=$LAST_XRAY_CORES")
-    
-    
-    versions=($(echo "$latest_releases" | grep -oP '"tag_name": "\K(.*?)(?=")'))
-    
-    while true; do
-        print_menu
-        read -p "Choose a version to install (1-${#versions[@]}), or press M to enter manually, Q to quit: " choice
-        
-        if [[ "$choice" =~ ^[1-9][0-9]*$ ]] && [ "$choice" -le "${#versions[@]}" ]; then
-            
-            choice=$((choice - 1))
-            
-            selected_version=${versions[choice]}
-            break
-            elif [ "$choice" == "M" ] || [ "$choice" == "m" ]; then
-            while true; do
-                read -p "Enter the version manually (e.g., v1.2.3): " custom_version
-                if [ "$(validate_version "$custom_version")" == "valid" ]; then
-                    selected_version="$custom_version"
-                    break 2
-                else
-                    echo -e "\033[1;31mInvalid version or version does not exist. Please try again.\033[0m"
-                fi
-            done
-            elif [ "$choice" == "Q" ] || [ "$choice" == "q" ]; then
-            echo -e "\033[1;31mExiting.\033[0m"
-            exit 0
-        else
-            echo -e "\033[1;31mInvalid choice. Please try again.\033[0m"
-            sleep 2
-        fi
-    done
-    
-    echo -e "\033[1;32mSelected version $selected_version for installation.\033[0m"
+    local selected_version="${XRAY_CORE_VERSION}"
+    if [[ ! "$selected_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        colorized_echo red "Invalid pinned Xray version: $selected_version"
+        exit 1
+    fi
+    colorized_echo green "Using repository-pinned Xray-core ${selected_version}."
     
     
 if ! dpkg -s unzip >/dev/null 2>&1; then
@@ -886,15 +826,21 @@ fi
     xray_filename="Xray-linux-$ARCH.zip"
     xray_download_url="https://github.com/XTLS/Xray-core/releases/download/${selected_version}/${xray_filename}"
     
-    echo -e "\033[1;33mDownloading Xray-core version ${selected_version} in the background...\033[0m"
-    wget "${xray_download_url}" -q &
-    wait
+    echo -e "\033[1;33mDownloading Xray-core version ${selected_version}...\033[0m"
+    wget "${xray_download_url}" -q --show-progress
     
     
-    echo -e "\033[1;33mExtracting Xray-core in the background...\033[0m"
-    unzip -o "${xray_filename}" >/dev/null 2>&1 &
-    wait
+    echo -e "\033[1;33mExtracting Xray-core...\033[0m"
+    unzip -o "${xray_filename}" >/dev/null 2>&1
     rm "${xray_filename}"
+
+    local actual_version
+    actual_version="$("$DATA_MAIN_DIR/xray-core/xray" -version 2>/dev/null | awk 'NR == 1 { print $2 }')"
+    if [[ "$actual_version" != "${selected_version#v}" ]]; then
+        colorized_echo red "Downloaded Xray-core version ${actual_version:-unknown} does not match ${selected_version}."
+        exit 1
+    fi
+    colorized_echo green "Verified Xray-core version ${selected_version}."
 }
 get_current_xray_core_version() {
     XRAY_BINARY="$DATA_MAIN_DIR/xray-core/xray"
@@ -1024,7 +970,7 @@ update_core_command() {
     # Restart Marzban-node
     colorized_echo red "Restarting Marzban-node..."
     $APP_NAME restart -n
-    colorized_echo blue "Installation of XRAY-CORE version $selected_version completed."
+    colorized_echo blue "Installation of XRAY-CORE version ${XRAY_CORE_VERSION} completed."
 }
 
 

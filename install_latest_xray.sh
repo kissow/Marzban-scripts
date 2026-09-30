@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 
-# Download Xray latest
+# Download the repository-pinned Xray core.
+# The explicit argument still allows a controlled override for maintenance,
+# while normal builds and installs stay on one known version.
 
-RELEASE_TAG="latest"
+RELEASE_TAG="${XRAY_CORE_VERSION:-v26.3.27}"
 
-if [[ "$1" ]]; then
+if [[ -n "$1" ]]; then
     RELEASE_TAG="$1"
+fi
+
+if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "error: Xray core version must be an explicit release tag such as v26.3.27 (received: $RELEASE_TAG)"
+    exit 1
 fi
 
 check_if_running_as_root() {
@@ -76,11 +83,7 @@ identify_the_operating_system_and_architecture() {
 }
 
 download_xray() {
-    if [[ "$RELEASE_TAG" == "latest" ]]; then
-        DOWNLOAD_LINK="https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-$ARCH.zip"
-    else
-        DOWNLOAD_LINK="https://github.com/XTLS/Xray-core/releases/download/$RELEASE_TAG/Xray-linux-$ARCH.zip"
-    fi
+    DOWNLOAD_LINK="https://github.com/XTLS/Xray-core/releases/download/$RELEASE_TAG/Xray-linux-$ARCH.zip"
     
     echo "Downloading Xray archive: $DOWNLOAD_LINK"
     if ! curl -RL -H 'Cache-Control: no-cache' -o "$ZIP_FILE" "$DOWNLOAD_LINK"; then
@@ -99,6 +102,23 @@ extract_xray() {
     echo "Extracted Xray archive to $TMP_DIRECTORY"
 }
 
+verify_xray_version() {
+    local expected_version="${RELEASE_TAG#v}"
+    local actual_version
+
+    if [[ ! -x "${TMP_DIRECTORY}/xray" ]]; then
+        echo "error: Xray archive does not contain an executable binary."
+        exit 1
+    fi
+
+    actual_version="$(${TMP_DIRECTORY}/xray -version 2>/dev/null | awk 'NR == 1 { print $2 }')"
+    if [[ "$actual_version" != "$expected_version" ]]; then
+        echo "error: downloaded Xray version ${actual_version:-unknown} does not match requested ${RELEASE_TAG}."
+        exit 1
+    fi
+    echo "Verified Xray core version ${RELEASE_TAG}"
+}
+
 place_xray() {
     install -m 755 "${TMP_DIRECTORY}/xray" "/usr/local/bin/xray"
     install -d "/usr/local/share/xray/"
@@ -115,6 +135,7 @@ ZIP_FILE="${TMP_DIRECTORY}/Xray-linux-$ARCH.zip"
 
 download_xray
 extract_xray
+verify_xray_version
 place_xray
 
 "rm" -rf "$TMP_DIRECTORY"

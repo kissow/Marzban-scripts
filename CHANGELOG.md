@@ -2,6 +2,11 @@
 
 本文件记录相对 [Gozargah/Marzban-scripts](https://github.com/Gozargah/Marzban-scripts) 的新增与调整。感谢原作者和贡献者，保留上游 Git 历史与许可证。
 
+## 正式版核心一致性闸门（2026-09-30，未发布）
+
+- `install_latest_xray.sh` 安装前校验下载的 Xray 二进制版本必须与显式请求的版本一致。
+- 正式安装和更新继续以 `v26.3.27` 为唯一默认核心，错误版本会中止，不会静默覆盖现有核心。
+
 ## 开发中（尚未发布）
 
 - 安装和更新脚本改为从 `kissow/Marzban`、`kissow/Marzban-node` 与 `kissow/Marzban-scripts` 读取文件，并拉取 `ghcr.io/kissow/` 的 Fork 镜像。
