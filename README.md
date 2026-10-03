@@ -1,5 +1,11 @@
 # Mr.shaw Marzban 更新脚本
 
+## MR-20261003-EGRESS-UDP 配对更新（2026-10-03）
+
+本次脚本运行时代码、install/adopt/update、镜像地址、证书、端口、数据目录与固定 Xray `v26.3.27` 均无变化，无需额外安装软件或开放端口。主面板源提交 `10f46df8e52ad24c79a1d4a1aafc020a7f7ad335`，Node 源提交 `ff3ed8affb43a7c0be84b7404b25ba149cd9c805`；两边新增每 Node UDP 处理合同。只有两个镜像发布证据齐全后才更新：已切换 Fork 的服务器先在每台 Node 执行 `marzban-node update` 并检查状态，再在主面板执行 `marzban update`。本轮不需要重复 adopt，不使用 reinstall，不删除数据卷。
+
+新模式要求 Node 能力 `managed-outbounds-udp-v1`；旧模式 legacy 默认兼容，旧 Node 使用新模式返回主面板 409。TCP-only 仅处理默认 DNS 的 TCP 兼容并阻断其他默认 UDP，不是任意 UDP 转 TCP，也不保证所有手机应用可用。实际供应商 TCP53、v2rayNG/Clash Meta、UI 和服务器仍待验收。完整合同见 [主面板 UDP 文档](https://github.com/kissow/Marzban/blob/master/docs/NODE_EGRESS_UDP.md) 和 [Node 线协议](https://github.com/kissow/Marzban-node/blob/master/docs/egress-udp.md)；发布证据见各仓库 RELEASE_CHECKLIST，不复用历史镜像摘要。
+
 这是基于 [Gozargah/Marzban-scripts](https://github.com/Gozargah/Marzban-scripts) 的开源 Fork。感谢原作者和贡献者，保留原仓库历史与许可证。本 Fork 的功能说明见 [更新记录](CHANGELOG.md)，主面板和 Node 的具体功能分别见 [Marzban](https://github.com/kissow/Marzban/blob/master/FORK_FEATURES.md) 与 [Marzban-Node](https://github.com/kissow/Marzban-node/blob/master/FORK_FEATURES.md)。
 
 ## 已经安装官方版的服务器

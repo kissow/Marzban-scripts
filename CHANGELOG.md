@@ -1,5 +1,11 @@
 # Mr.shaw Marzban-scripts Fork 更新记录
 
+## MR-20261003-EGRESS-UDP：配对部署文档（2026-10-03）
+
+- scripts 仅更新文档；Bash 运行时、命令、镜像来源、固定核心 v26.3.27、证书、端口和数据路径无变化，不构建新的 scripts 容器。
+- 配对主面板 `10f46df8e52ad24c79a1d4a1aafc020a7f7ad335` / Node `ff3ed8affb43a7c0be84b7404b25ba149cd9c805` 新增 `udp_mode` 和 `managed-outbounds-udp-v1`；新模式需要两边更新，先 Node 后主面板。既有 Fork 继续 update，不重复 adopt/reinstall。
+- UDP DNS TCP 兼容、供应商限制和待验收项目均在 README 和两边协议文档登记；代码推送、Actions、镜像发布与服务器验收是不同状态，以配对仓库发布证据为准。
+
 本文件记录相对 [Gozargah/Marzban-scripts](https://github.com/Gozargah/Marzban-scripts) 的新增与调整。感谢原作者和贡献者，保留上游 Git 历史与许可证。
 
 ## 正式版核心一致性闸门（2026-09-30，未发布）
