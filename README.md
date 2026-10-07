@@ -1,12 +1,16 @@
 # Mr.shaw Marzban 更新脚本
 
-## MR-20261008-NODE-RELAY-SOURCES 配对登记（本地，未发布）
+## MR-20261008-NODE-RELAY-SOURCES（镜像已发布，服务器/视觉验收待完成）
 
-本轮scripts安装/更新代码、命令、镜像地址、固定Xray v26.3.27、证书与目录无变化；仅配对说明，未推送本轮资料。主控增加Node来源API/迁移和独立管理弹窗；Node新增managed-node-relay-v1认证快照/监听进程。两边镜像尚未构建发布，不提供当前生产更新指令作为已发布功能。
+连接方式采用原React/Chakra独立管理弹窗和原信息图标。可选择Marzban主服务器或另一台源Node中转到目标Node；保留原订阅别名、顺序、数量，只替换精确匹配的端点，不新增Relay。目标认证、设备凭据和出口不变。自转发/环路/占用/能力/精确ACK/失败回滚、来源隔离与恢复有回归测试。
 
-发布后已切Fork的服务器先在承担来源的Node执行marzban-node update，核对能力/连接/核心，再在主控执行marzban update；仅作目标的既有配对Node不强制更新。无需重复adopt/install或额外转发软件；在源服务器放行业务入口TCP端口。新服务器继续原一键install，保留旧服务器数据、.env、证书、控制/API端口与卷。正式发布需登记配对SHA、Actions、两镜像架构摘要及服务器验收，当前均待执行。
+管理API增加source/source_node_id/来源列表，additive迁移9012ab34cd56；Node新增managed-node-relay-v1、原认证REST/RPyC完整快照与独立转发进程。固定Xray26.3.27，原证书、控制/API端口、用户、.env与数据卷保留。首版VLESS TCP/RAW REALITY、IPv4/DNS-only入口、单跳选择，不是所有协议或任意UDP转发；每源512个配置不是吞吐承诺。
 
-[主控管理接口与范围](https://github.com/kissow/Marzban/blob/master/docs/NODE_RELAY_SOURCES.md)；[Node线协议](https://github.com/kissow/Marzban-node/blob/master/docs/node-relay.md)。新链接本轮上传后才公开可用。下方旧发布证据不代替本轮。
+本地最终代码和独立发布副本再次复测：主控164/164、Node60/60（准备固定Xray，无跳过）、前端47/47、类型/生产构建、依赖/diff通过。干净Linux CI与两镜像双架构发布核对完成；真实跨服务器mTLS、公网吞吐、多引擎数据库、实际原组件UI截图仍待验收，不标稳定版。UI截图因浏览器策略blocked，未绕过。
+
+主控revision 93bfbb5b17dd8ee731449976df1a4af4e0f57ca5，Actions37657985804；Node revision 7b45fc0dc3b4451045a06123b52ccdaaa5911b8d，Actions37657976968。scripts合并ed274ba82410f9e6f580cbec59b2a15a89ab81ea，Actions37657994843成功，脚本运行时不变。先在承担来源的Node运行marzban-node update，再在主控运行marzban update；仅作目标的既有配对Node不强制更新。新Node沿用仓库install，现在拉取新latest；旧机不重装、不删卷、不重复adopt。源业务入口TCP需放行，客户端刷新订阅。
+
+[精确配对SHA、index/架构/config摘要、接口与SSH验收证据](https://github.com/kissow/Marzban/blob/master/docs/NODE_RELAY_SOURCES_RELEASE.md)。下方旧记录只描述各自日期的阶段，不代替本轮最新状态；文档[skip ci]提交不改变已核对的运行时镜像revision。
 
 
 ## MR-20261003-EGRESS-UDP 配对更新（2026-10-03）
