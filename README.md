@@ -1,5 +1,14 @@
 # Mr.shaw Marzban 更新脚本
 
+## MR-20261008-NODE-RELAY-SOURCES 配对登记（本地，未发布）
+
+本轮scripts安装/更新代码、命令、镜像地址、固定Xray v26.3.27、证书与目录无变化；仅配对说明，未推送本轮资料。主控增加Node来源API/迁移和独立管理弹窗；Node新增managed-node-relay-v1认证快照/监听进程。两边镜像尚未构建发布，不提供当前生产更新指令作为已发布功能。
+
+发布后已切Fork的服务器先在承担来源的Node执行marzban-node update，核对能力/连接/核心，再在主控执行marzban update；仅作目标的既有配对Node不强制更新。无需重复adopt/install或额外转发软件；在源服务器放行业务入口TCP端口。新服务器继续原一键install，保留旧服务器数据、.env、证书、控制/API端口与卷。正式发布需登记配对SHA、Actions、两镜像架构摘要及服务器验收，当前均待执行。
+
+[主控管理接口与范围](https://github.com/kissow/Marzban/blob/master/docs/NODE_RELAY_SOURCES.md)；[Node线协议](https://github.com/kissow/Marzban-node/blob/master/docs/node-relay.md)。新链接本轮上传后才公开可用。下方旧发布证据不代替本轮。
+
+
 ## MR-20261003-EGRESS-UDP 配对更新（2026-10-03）
 
 本次脚本运行时代码、install/adopt/update、镜像地址、证书、端口、数据目录与固定 Xray `v26.3.27` 均无变化，无需额外安装软件或开放端口。主面板源提交 `10f46df8e52ad24c79a1d4a1aafc020a7f7ad335`，Node 源提交 `ff3ed8affb43a7c0be84b7404b25ba149cd9c805`；两边新增每 Node UDP 处理合同。只有两个镜像发布证据齐全后才更新：已切换 Fork 的服务器先在每台 Node 执行 `marzban-node update` 并检查状态，再在主面板执行 `marzban update`。本轮不需要重复 adopt，不使用 reinstall，不删除数据卷。
